@@ -5,24 +5,48 @@
  * @format
  */
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
+import 'react-native-gesture-handler';
+import React, { useContext } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { AuthProvider, AuthContext } from './navigation/AuthContext';
+import AuthStack from './navigation/Stacks/AuthStack';
+import CoachStack from './navigation/Stacks/CoachStack';
+import SkaterStack from './navigation/Stacks/SkaterStack';
+import { ActivityIndicator, View } from 'react-native';
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+// ✅ ROOT COMPONENT THAT HANDLES LOGIC
+const RootNavigator = () => {
+  const { isAuthenticated, user } = useContext(AuthContext);
 
+  if (!isAuthenticated || !user) {
+    return <AuthStack />;
+  }
+
+  if (user.role === 'Coach') {
+    return <CoachStack />;
+  }
+
+  if (user.role === 'Skater') {
+    return <SkaterStack />;
+  }
+
+  // Fallback UI while user is being determined
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <NewAppScreen templateFileName="App.tsx" />
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <ActivityIndicator size="large" color="#2563eb" />
     </View>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
+// ✅ WRAPS EVERYTHING IN PROVIDERS
+const App = () => (
+  <AuthProvider>
+    <NavigationContainer>
+      <RootNavigator />
+    </NavigationContainer>
+  </AuthProvider>
+);
 
 export default App;
+
+
