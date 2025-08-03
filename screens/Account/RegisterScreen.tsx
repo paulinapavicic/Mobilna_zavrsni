@@ -14,13 +14,14 @@ import * as Yup from 'yup';
 import { registerUser } from '../../services/authService'; 
 import { getCategories, getCoaches } from '../../services/utilsService'; 
 
-type Role = 'Skater' | 'Coach'; 
+
+type Role = 'Skater' | 'Coach';
 
 interface RegisterValues {
   name: string;
   surname: string;
   password: string;
-  role: Role;
+  role: Role | '';
   categoryId: string;
   coachId: string;
 }
@@ -30,34 +31,67 @@ const RegisterSchema = Yup.object().shape({
   surname: Yup.string().required('Last name is required'),
   password: Yup.string().required('Password is required'),
   role: Yup.string().required('Role is required'),
-  categoryId: Yup.string().when('role', {
-    is: 'Skater',
-    then: (schema) => schema.required('Category is required'),
+  categoryId: Yup.string().when('role', (role, schema) => {
+    return role === 'Skater' ? schema.required('Category is required') : schema.notRequired();
   }),
-  coachId: Yup.string().when('role', {
-    is: 'Skater',
-    then: (schema) => schema.required('Coach is required'),
+  coachId: Yup.string().when('role', (role, schema) => {
+    return role === 'Skater' ? schema.required('Coach is required') : schema.notRequired();
   }),
 });
 
+
 export default function RegisterScreen({ navigation }: any) {
-  const [categories, setCategories] = useState([]);
-  const [coaches, setCoaches] = useState([]);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [coaches, setCoaches] = useState<{ id: string; name: string; surname: string }[]>([]);
 
   useEffect(() => {
-    getCategories().then(setCategories).catch(() => Alert.alert('Error', 'Failed to load categories'));
-    getCoaches().then(setCoaches).catch(() => Alert.alert('Error', 'Failed to load coaches'));
+    getCategories()
+      .then(setCategories)
+      .catch(() => Alert.alert('Error', 'Failed to load categories'));
+
+    getCoaches()
+      .then(setCoaches)
+      .catch(() => Alert.alert('Error', 'Failed to load coaches'));
   }, []);
 
-  const handleSubmit = async (values: RegisterValues) => {
-    try {
-      await registerUser(values);
-      Alert.alert('Success', 'Registration complete');
-      navigation.navigate('Login'); // Or wherever you want to go next
-    } catch (err: any) {
-      Alert.alert('Register Failed', err?.response?.data?.message || 'Something went wrong');
-    }
+ const handleSubmit = (values: RegisterValues) => {
+  // Normalize role (capitalize first letter)
+  const role = values.role.trim();
+
+  const payload: any = {
+    name: values.name.trim(),
+    surname: values.surname.trim(),
+    password: values.password,
+    role,
   };
+
+  // Only include categoryId and coachId if role is exactly 'Skater'
+  if (role === 'Skater') {
+    if (values.categoryId) {
+      payload.categoryId = values.categoryId;
+    }
+    if (values.coachId) {
+      payload.coachId = values.coachId;
+    }
+  }
+
+  console.log('Submitting payload:', payload);
+
+  registerUser(payload)
+    .then(() => {
+      Alert.alert('Success', 'Registration complete');
+      navigation.navigate('Login');
+    })
+    .catch(err => {
+      // Log entire error response for debugging
+      console.error('Registration error:', err);
+      if (err.response) {
+        console.error('API error details:', err.response);
+      }
+      const msg = err.response?.data?.message || err.response?.data?.title || err.message || 'Registration failed';
+      Alert.alert('Register Failed', msg);
+    });
+};
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -67,20 +101,21 @@ export default function RegisterScreen({ navigation }: any) {
           name: '',
           surname: '',
           password: '',
-          role: '' as Role,
+          role: '',
           categoryId: '',
           coachId: '',
         }}
         validationSchema={RegisterSchema}
         onSubmit={handleSubmit}
       >
-        {({ handleChange, handleSubmit, setFieldValue, values, errors, touched }) => (
+        {({ handleChange, setFieldValue, values, errors, touched, handleSubmit }) => (
           <>
             <TextInput
               placeholder="First name"
               style={styles.input}
               onChangeText={handleChange('name')}
               value={values.name}
+              autoCapitalize="words"
             />
             {touched.name && errors.name && <Text style={styles.error}>{errors.name}</Text>}
 
@@ -89,6 +124,7 @@ export default function RegisterScreen({ navigation }: any) {
               style={styles.input}
               onChangeText={handleChange('surname')}
               value={values.surname}
+              autoCapitalize="words"
             />
             {touched.surname && errors.surname && <Text style={styles.error}>{errors.surname}</Text>}
 
@@ -103,7 +139,7 @@ export default function RegisterScreen({ navigation }: any) {
 
             <Picker
               selectedValue={values.role}
-              onValueChange={(value) => setFieldValue('role', value)}
+              onValueChange={value => setFieldValue('role', value)}
               style={styles.input}
             >
               <Picker.Item label="Select role" value="" />
@@ -112,36 +148,47 @@ export default function RegisterScreen({ navigation }: any) {
             </Picker>
             {touched.role && errors.role && <Text style={styles.error}>{errors.role}</Text>}
 
-            {/* Show Category + Coach only if role === 'Skater' */}
             {values.role === 'Skater' && (
               <>
                 <Picker
                   selectedValue={values.categoryId}
-                  onValueChange={(value) => setFieldValue('categoryId', value)}
+                  onValueChange={value => setFieldValue('categoryId', value)}
                   style={styles.input}
                 >
                   <Picker.Item label="Select category" value="" />
-                  {categories.map((cat: any) => (
+                  {categories.map(cat => (
                     <Picker.Item key={cat.id} label={cat.name} value={cat.id} />
                   ))}
                 </Picker>
-                {touched.categoryId && errors.categoryId && <Text style={styles.error}>{errors.categoryId}</Text>}
+                {touched.categoryId && errors.categoryId && (
+                  <Text style={styles.error}>{errors.categoryId}</Text>
+                )}
 
                 <Picker
                   selectedValue={values.coachId}
-                  onValueChange={(value) => setFieldValue('coachId', value)}
+                  onValueChange={value => setFieldValue('coachId', value)}
                   style={styles.input}
                 >
                   <Picker.Item label="Select coach" value="" />
-                  {coaches.map((coach: any) => (
-                    <Picker.Item key={coach.id} label={`${coach.name} ${coach.surname}`} value={coach.id} />
+                  {coaches.map(coach => (
+                    <Picker.Item
+                      key={coach.id}
+                      label={`${coach.name} ${coach.surname}`}
+                      value={coach.id}
+                    />
                   ))}
                 </Picker>
-                {touched.coachId && errors.coachId && <Text style={styles.error}>{errors.coachId}</Text>}
+                {touched.coachId && errors.coachId && (
+                  <Text style={styles.error}>{errors.coachId}</Text>
+                )}
               </>
             )}
 
-            <TouchableOpacity style={styles.button} onPress={() => handleSubmit()}>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => handleSubmit()}
+              accessibilityLabel="Register button"
+            >
               <Text style={styles.buttonText}>Register</Text>
             </TouchableOpacity>
           </>

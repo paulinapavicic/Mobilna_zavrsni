@@ -27,19 +27,16 @@ export const getMaterialDetails = async (id: string) => {
   return res.data;
 };
 
-export const deleteEducationFile = async (fileId: string, materialId: string) => {
-  return api.post(`/EducationalFile/delete`, { id: fileId, materialId });
+export const deleteEducationFile = async (fileId: string) => {
+  return api.delete(`/EducationalFile/${fileId}`);
 };
+
 
 export const deleteEducationMaterial = async (id: string) => {
   return api.delete(`/Education/${id}`);
 };
 
 
-export const uploadEducationalFile = async (formData: FormData) => {
-  return api.post('/EducationalFile/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
+export const uploadEducationalFile = (materialId: string, formData: FormData) => {
+  return api.post(`/EducationalFile/material/${materialId}/upload`, formData);
 };

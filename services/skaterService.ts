@@ -1,11 +1,11 @@
 import api from './api';
 
-export type Skater = {
-  id: string;
+type CreateSkaterPayload = {
   name: string;
   surname: string;
-  categoryName: string;
+  categoryId: number; // number type to match backend expectations
 };
+
 
 export const getSkaters = async () => {
   const res = await api.get('/Skaters');
@@ -13,19 +13,16 @@ export const getSkaters = async () => {
 };
 
 
-export const deleteSkater = async (id: string): Promise<void> =>
-  await api.delete(`/Skaters/${id}`);
+export const deleteSkater = async (id: string) => {
+  return api.delete(`/Skaters/${id}`);
+};
 
 export const getSkaterCategories = async () => {
   const res = await api.get('/Category'); 
   return res.data;
 };
 
-export const createSkater = async (payload: {
-  name: string;
-  surname: string;
-  categoryId: string;
-}) => {
+export const createSkater = async (payload: CreateSkaterPayload) => {
   return api.post('/Skaters', payload);
 };
 
@@ -38,8 +35,7 @@ export const getSkaterById = async (id: string) => {
 
 export const updateSkater = async (
   id: string,
-  data: { name: string; surname: string; categoryId: string }
+  data: { name: string; surname: string; categoryId: number }
 ) => {
   return api.put(`/Skaters/${id}`, data);
 };
-

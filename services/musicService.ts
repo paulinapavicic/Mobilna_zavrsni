@@ -1,9 +1,7 @@
 import api from './api';
 
 export const uploadMusicFile = async (programId: string, formData: FormData) => {
-  
-  const url = `/Music/program/${programId}/upload`;
-  return api.post(url, formData);
+  return api.post(`/Music/program/${programId}/upload`, formData);
 };
 
 

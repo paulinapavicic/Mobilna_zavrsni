@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   FlatList,
   Alert,
-  Linking,
+  Platform,
 } from 'react-native';
 
 import { pick, keepLocalCopy } from '@react-native-documents/picker';
@@ -43,22 +43,22 @@ const MusicUploadScreen: React.FC = () => {
     try {
       const data = await getMusicFilesByProgramId(programId);
       setMusicFiles(data);
-    } catch {
+    } catch (error) {
       Alert.alert('Error', 'Failed to load music files');
+      console.error('Load files error:', error);
     }
   };
 
   useEffect(() => {
     loadFiles();
     return () => {
-      // Cleanup sound when component unmounts
       if (currentSound) {
         currentSound.release();
       }
     };
   }, []);
 
-  // Handle audio playback inside app
+  // Play audio inside app
   const playAudio = (url: string) => {
     if (currentSound) {
       currentSound.stop(() => {
@@ -66,7 +66,7 @@ const MusicUploadScreen: React.FC = () => {
         setCurrentSound(null);
       });
     }
-    const sound = new Sound(url, Sound.MAIN_BUNDLE, (error) => {
+    const sound = new Sound(url, undefined, (error) => {
       if (error) {
         Alert.alert('Playback error', 'Cannot play this audio file');
         return;
@@ -82,47 +82,63 @@ const MusicUploadScreen: React.FC = () => {
     });
   };
 
-  // Inside your MusicUploadScreen component
+  // Upload handler with detailed debugging and fixed FormData construction
+  const handleUpload = async () => {
+    try {
+      console.log('Opening document picker...');
+      const [res] = await pick({
+        types: ['audio/*'],
+        allowMultiSelection: false,
+        copyTo: 'documentDirectory',
+      });
+      console.log('Picked file:', res);
 
-const handleUpload = async () => {
-  try {
-    const [res] = await pick({
-      types: ['audio/*'],      
-      allowMultiSelection: false,
-      copyTo: 'documentDirectory',
-    });
+      const [localFile] = await keepLocalCopy({
+        files: [{ uri: res.uri, fileName: res.name ?? 'unknown' }],
+        destination: 'documentDirectory',
+      });
+      console.log('Local file copy:', localFile);
 
-    const [localFile] = await keepLocalCopy({
-      files: [{ uri: res.uri, fileName: res.name ?? 'unknown' }],
-      destination: 'documentDirectory',
-    });
+      // Use localUri and fallback logic for filename
+      const fileName = localFile.fileName ?? res.name ?? 'unknown';
+      const fileUri = Platform.OS === 'android' && !localFile.localUri.startsWith('file://')
+        ? 'file://' + localFile.localUri
+        : localFile.localUri;
 
-    const formData = new FormData();
-    // No need to append programId here, it's in URL, so only file key is necessary
-    formData.append('musicFile', {
-      uri: localFile.uri,
-      name: localFile.fileName,
-      type: res.mimeType || 'audio/mpeg',
-    } as any);
+      const formData = new FormData();
+      formData.append('musicFile', {
+        uri: fileUri,
+        name: fileName,
+        type: res.mimeType || 'audio/mpeg',
+      } as any);
 
-    setUploading(true);
-    // Pass programId as an argument here
-    await uploadMusicFile(programId, formData);
+      // Log FormData contents for React Native debug
+      if (formData && formData._parts) {
+        formData._parts.forEach(([key, value]) => {
+          console.log('FormData key:', key, 'value:', value);
+        });
+      } else {
+        console.warn('FormData parts not available');
+      }
 
-    Alert.alert('Success', 'Music file uploaded successfully');
-    loadFiles();
+      setUploading(true);
+      const result = await uploadMusicFile(programId, formData);
+      console.log('Upload result:', result);
 
-  } catch (err: any) {
-    if (err?.message === 'User cancelled document picker') {
-      console.log('User cancelled document picker');
-    } else {
-      Alert.alert('Upload Failed', err?.message || 'Unknown error');
+      Alert.alert('Success', 'Music file uploaded successfully');
+      loadFiles();
+
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      if (err?.message === 'User cancelled document picker') {
+        console.log('User cancelled document picker');
+      } else {
+        Alert.alert('Upload Failed', err?.message || 'Unknown error');
+      }
+    } finally {
+      setUploading(false);
     }
-  } finally {
-    setUploading(false);
-  }
-};
-
+  };
 
   // Render each music file item
   const renderFile = ({ item }: { item: FileModel }) => (

@@ -62,14 +62,32 @@ const SkaterListScreen: React.FC = () => {
     <View style={styles.pageContainer}>
       <View style={styles.titleRow}>
         <Text style={styles.title}>My Skaters</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => navigation.navigate('SkaterCreate')}
-        >
-          <Ionicons name="person-add" size={20} color="#fff" />
-          <Text style={styles.addBtnText}>Add New Skater</Text>
-        </TouchableOpacity>
+        
+        <View style={styles.rightButtons}>
+          <TouchableOpacity
+            style={[styles.refreshBtn, loading && styles.disabledButton]}
+            onPress={loadSkaters}
+            disabled={loading}
+            accessibilityLabel="Refresh skater list"
+            accessibilityRole="button"
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="refresh" size={22} color="#fff" />
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => navigation.navigate('SkaterCreate')}
+          >
+            <Ionicons name="person-add" size={20} color="#fff" />
+            <Text style={styles.addBtnText}>Add New Skater</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
       <View style={styles.card}>
         <View style={styles.tableHeader}>
           <Text style={[styles.cell, styles.headerText]}>Name</Text>
@@ -77,6 +95,7 @@ const SkaterListScreen: React.FC = () => {
           <Text style={[styles.cell, styles.headerText]}>Category</Text>
           <Text style={[styles.cell, styles.headerText, { textAlign: 'center' }]}>Actions</Text>
         </View>
+
         {loading ? (
           <ActivityIndicator size="large" style={{ margin: 30 }} />
         ) : skaters.length === 0 ? (
@@ -87,7 +106,7 @@ const SkaterListScreen: React.FC = () => {
         ) : (
           <FlatList
             data={skaters}
-            keyExtractor={item => item.id}
+            keyExtractor={(item) => item.id}
             renderItem={renderItem}
           />
         )}
@@ -115,6 +134,22 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     color: '#2563eb',
+  },
+  rightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  refreshBtn: {
+    backgroundColor: '#0077cc',
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   addBtn: {
     flexDirection: 'row',
