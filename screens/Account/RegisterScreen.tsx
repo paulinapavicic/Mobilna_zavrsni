@@ -68,7 +68,7 @@ export default function RegisterScreen({ navigation }: any) {
   // Only include categoryId and coachId if role is exactly 'Skater'
   if (role === 'Skater') {
     if (values.categoryId) {
-      payload.categoryId = values.categoryId;
+      payload.categoryId = parseInt(values.categoryId, 10);
     }
     if (values.coachId) {
       payload.coachId = values.coachId;

@@ -43,111 +43,123 @@ export default function EducationalFileUploadScreen() {
   const [files, setFiles] = useState<FileModel[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  // Load material details & current files
-  const loadData = async () => {
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function loadData() {
     try {
       const data = await getMaterialDetails(materialId);
       setMaterialTitle(data.title);
       setFiles(data.files || []);
     } catch (error) {
       Alert.alert('Error', 'Failed to load material details.');
-      console.error("Load data error:", error);
+      console.error('Load data error:', error);
     }
-  };
+  }
 
-  useEffect(() => {
-    loadData();
-  }, []);
+const handlePickFile = async () => {
+  try {
+    console.log("Opening document picker...");
+    const [res] = await pick({
+      allowMultiSelection: false,
+      copyTo: 'documentDirectory',
+      types: ['*/*'],
+    });
+    console.log("Picked file info:", res);
 
-  // File picker and upload handler with detailed debug logs
-  const handlePickFile = async () => {
-    try {
-      console.log("Opening document picker...");
-      const [res] = await pick({
-        allowMultiSelection: false,
-        copyTo: 'documentDirectory',
-        types: ['*/*'],
-      });
-      console.log("Picked file info:", res);
+    const [localFile] = await keepLocalCopy({
+      files: [{ uri: res.uri, fileName: res.name ?? 'unknown' }],
+      destination: 'documentDirectory',
+    });
+    console.log("Local file copy info:", localFile);
 
-      const [localFile] = await keepLocalCopy({
-        files: [{ uri: res.uri, fileName: res.name ?? 'unknown' }],
-        destination: 'documentDirectory',
-      });
-      console.log("Local file copy info:", localFile);
+    const fileName = localFile.fileName ?? res.name ?? 'unknown';
 
-      const fileName = localFile.fileName ?? res.name ?? 'unknown';
+    const uri =
+      Platform.OS === 'android' && !localFile.localUri.startsWith('file://')
+        ? 'file://' + localFile.localUri
+        : localFile.localUri;
 
-      const uri =
-        Platform.OS === 'android' && !localFile.localUri.startsWith('file://')
-          ? 'file://' + localFile.localUri
-          : localFile.localUri;
+    const formData = new FormData();
+    formData.append('file', {
+      uri,
+      name: fileName,
+      type: res.mimeType || 'application/octet-stream',
+    } as any);
 
-      const fileData = new FormData();
-      // **Do NOT append materialId in FormData, it’s passed via URL**
-      fileData.append('file', {
-        uri,
-        name: fileName,
-        type: res.mimeType || 'application/octet-stream',
-      } as any);
+    // ----------- Replace axios upload call with fetch here -------------
+    console.log('Uploading file with materialId:', materialId);
 
-      // Debug: inspect FormData parts internally since React Native lacks .entries()
-      if (fileData && (fileData as any)._parts) {
-        (fileData as any)._parts.forEach(([key, val]: any) =>
-          console.log('FormData part:', key, val)
-        );
-      } else {
-        console.warn("Unable to inspect FormData parts");
-      }
+    setUploading(true);
 
-      setUploading(true);
-      const response = await uploadEducationalFile(materialId, fileData);
-      console.log("Upload response:", response.data || response);
-
-      Alert.alert('Success', 'File uploaded!');
-      await loadData();
-
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      if (error.message === "User cancelled document picker") {
-        console.log("User cancelled document picker");
-      } else {
-        Alert.alert('Upload failed', error.message || 'Try a different file.');
-      }
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Delete file with confirmation and error handling
-  const handleDelete = async (fileId: string) => {
-    Alert.alert('Confirm Delete', 'Are you sure you want to remove this file?', [
-      { text: 'Cancel', style: 'cancel' },
+    // Use fetch instead of axios for the file upload
+    const response = await fetch(
+      `http://10.0.2.2:5243/api/EducationalFile/material/${materialId}/upload`,
       {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteEducationFile(fileId);
-            Alert.alert('Deleted!', 'File deleted successfully.');
-            await loadData();
-          } catch (error: any) {
-            console.error("Delete error:", error);
-            Alert.alert('Delete failed', error.message || 'Unknown error occurred');
-          }
-        },
-      },
-    ]);
-  };
+        method: 'POST',
+        body: formData,
+        // Do NOT set Content-Type header! Let fetch set it automatically.
+        // If your API requires auth tokens, add headers here:
+        // headers: { Authorization: `Bearer ${token}` }
+      }
+    );
 
-  // Render single file row
-  const renderItem = ({ item }: { item: FileModel }) => (
+    // Parse JSON response
+    const respJson = await response.json();
+    console.log('Fetch upload response:', respJson);
+
+    if (!response.ok) {
+      // Handle HTTP errors
+      throw new Error(respJson.message || 'Upload failed');
+    }
+
+    Alert.alert('Success', 'File uploaded!');
+    await loadData();
+
+  } catch (error: any) {
+    console.error('Upload error:', error);
+    if (error.message === 'User cancelled document picker') {
+      console.log('User cancelled document picker');
+    } else {
+      Alert.alert('Upload failed', error.message || 'Try a different file.');
+    }
+  } finally {
+    setUploading(false);
+  }
+};
+
+  async function handleDelete(fileId: string) {
+    Alert.alert(
+      'Confirm Delete',
+      'Are you sure you want to delete this file?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteEducationFile(fileId);
+              Alert.alert('Deleted', 'File deleted successfully');
+              await loadData();
+            } catch (err) {
+              console.error('Delete error:', err);
+              Alert.alert('Delete failed', err.message || 'Unknown error');
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  }
+
+  const renderFile = ({ item }: { item: FileModel }) => (
     <View style={styles.fileItem}>
       <View style={{ flex: 1 }}>
         <Text style={styles.fileTitle}>{item.fileName}</Text>
         <Text style={styles.fileMeta}>
-          {item.contentType} • {item.fileSize.toLocaleString()} bytes • Uploaded{' '}
-          {new Date(item.uploadedAt).toLocaleDateString()}
+          {item.contentType} • {item.fileSize.toLocaleString()} bytes • Uploaded {new Date(item.uploadedAt).toLocaleDateString()}
         </Text>
       </View>
       <View style={styles.fileActions}>
@@ -157,7 +169,7 @@ export default function EducationalFileUploadScreen() {
           </TouchableOpacity>
         )}
         {isCoach && (
-          <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.id)}>
+          <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteBtn}>
             <Text style={styles.deleteText}>Delete</Text>
           </TouchableOpacity>
         )}
@@ -167,23 +179,27 @@ export default function EducationalFileUploadScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Upload File to: {materialTitle}</Text>
+      <Text style={styles.header}>Upload files to: {materialTitle}</Text>
 
       {isCoach && (
-        <TouchableOpacity style={styles.uploadBtn} onPress={handlePickFile} disabled={uploading}>
-          <Text style={styles.uploadBtnText}>{uploading ? 'Uploading...' : '+ Upload File'}</Text>
+        <TouchableOpacity
+          onPress={handlePickFile}
+          disabled={uploading}
+          style={[styles.uploadBtn, uploading && { opacity: 0.6 }]}
+        >
+          <Text style={styles.uploadBtnText}>{uploading ? 'Uploading…' : '+ Upload File'}</Text>
         </TouchableOpacity>
       )}
 
       <FlatList
         data={files}
-        keyExtractor={(f) => f.id}
-        renderItem={renderItem}
-        ListEmptyComponent={<Text style={styles.emptyText}>No files have been uploaded yet.</Text>}
+        keyExtractor={(item) => item.id}
+        renderItem={renderFile}
+        ListEmptyComponent={<Text style={styles.emptyText}>No files uploaded yet.</Text>}
         style={styles.fileList}
       />
 
-      <TouchableOpacity style={styles.cancelBtn} onPress={() => navigation.goBack()}>
+      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.cancelBtn}>
         <Text style={styles.cancelText}>Cancel</Text>
       </TouchableOpacity>
     </View>
@@ -192,43 +208,46 @@ export default function EducationalFileUploadScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
-  header: { fontSize: 18, color: '#2563eb', fontWeight: 'bold', marginBottom: 16 },
+  header: { fontSize: 18, fontWeight: 'bold', color: '#256ebd', marginBottom: 16 },
   uploadBtn: {
-    backgroundColor: '#2563eb',
-    padding: 12,
+    backgroundColor: '#256ebd',
     borderRadius: 8,
-    alignItems: 'center',
+    padding: 14,
     marginBottom: 16,
+    alignItems: 'center',
   },
-  uploadBtnText: { color: '#fff', fontWeight: 'bold' },
+  uploadBtnText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
   fileList: { flexGrow: 1 },
   fileItem: {
     backgroundColor: '#f9f9f9',
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
   },
   fileTitle: { fontWeight: 'bold' },
-  fileMeta: { fontSize: 12, color: '#667' },
-  fileActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  downloadBtn: { color: '#2563eb', fontWeight: '600' },
+  fileMeta: { fontSize: 12, color: '#666', marginTop: 4 },
+  fileActions: { flexDirection: 'row', marginTop: 8 },
+  downloadBtn: { color: '#256ebd', fontWeight: '600' },
   deleteBtn: {
-    backgroundColor: '#e53935',
+    backgroundColor: '#d32f2f',
     paddingVertical: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderRadius: 5,
+    marginLeft: 10,
   },
-  deleteText: { color: '#fff', fontWeight: 'bold' },
+  deleteText: { color: 'white', fontWeight: 'bold' },
   cancelBtn: {
     marginTop: 16,
-    borderColor: '#ced4da',
     borderWidth: 1,
-    padding: 12,
+    borderColor: '#ccc',
     borderRadius: 8,
+    paddingVertical: 12,
     alignItems: 'center',
   },
   cancelText: { color: '#333' },
-  emptyText: { color: '#888', textAlign: 'center', marginTop: 30 },
+  emptyText: { color: '#999', textAlign: 'center', marginTop: 30 },
 });

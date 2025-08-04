@@ -14,13 +14,7 @@ export const uploadEducationMaterial = async (data: { title: string; description
   return api.post('/Education', data); // adjust endpoint as needed
 };
 
-/* If supporting file upload (multipart/form-data):
-export const uploadEducationMaterial = async (formData: FormData) => {
-  return api.post('/education', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  });
-};
-*/
+
 
 export const getMaterialDetails = async (id: string) => {
   const res = await api.get(`/Education/${id}`);

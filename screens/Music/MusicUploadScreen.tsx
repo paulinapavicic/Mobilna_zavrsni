@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+ import React, { useState, useEffect, useContext } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   Platform,
 } from 'react-native';
 
+
 import { pick, keepLocalCopy } from '@react-native-documents/picker';
 import Sound from 'react-native-sound';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { uploadMusicFile, getMusicFilesByProgramId } from '../../services/musicService';
 import { AuthContext } from '../../navigation/AuthContext';
+
 
 type FileModel = {
   id: string;
@@ -29,23 +31,24 @@ type RouteParams = {
 };
 
 const MusicUploadScreen: React.FC = () => {
-  const route = useRoute();
-  const navigation = useNavigation();
   const { user } = useContext(AuthContext);
+  const isCoach = user?.role === 'Coach';
 
-  const { programId } = route.params as RouteParams;
+  const { programId } = useRoute().params as RouteParams;
+  const navigation = useNavigation();
+
   const [musicFiles, setMusicFiles] = useState<FileModel[]>([]);
   const [uploading, setUploading] = useState(false);
   const [currentSound, setCurrentSound] = useState<Sound | null>(null);
 
-  // Load files from backend
+  // Load music files for program
   const loadFiles = async () => {
     try {
       const data = await getMusicFilesByProgramId(programId);
       setMusicFiles(data);
     } catch (error) {
       Alert.alert('Error', 'Failed to load music files');
-      console.error('Load files error:', error);
+      console.error('Load music files error:', error);
     }
   };
 
@@ -58,7 +61,7 @@ const MusicUploadScreen: React.FC = () => {
     };
   }, []);
 
-  // Play audio inside app
+  // Play audio helper
   const playAudio = (url: string) => {
     if (currentSound) {
       currentSound.stop(() => {
@@ -74,7 +77,7 @@ const MusicUploadScreen: React.FC = () => {
       setCurrentSound(sound);
       sound.play((success) => {
         if (!success) {
-          Alert.alert('Playback failed', 'Failed to play audio completely');
+          Alert.alert('Playback error', 'Failed to play audio completely');
         }
         sound.release();
         setCurrentSound(null);
@@ -82,112 +85,117 @@ const MusicUploadScreen: React.FC = () => {
     });
   };
 
-  // Upload handler with detailed debugging and fixed FormData construction
+  // Upload music file with detailed debugging
   const handleUpload = async () => {
     try {
-      console.log('Opening document picker...');
+      console.log('Opening music picker...');
       const [res] = await pick({
-        types: ['audio/*'],
         allowMultiSelection: false,
+        types: ['audio/*'],
         copyTo: 'documentDirectory',
       });
-      console.log('Picked file:', res);
+      console.log('Picked music file:', res);
 
       const [localFile] = await keepLocalCopy({
         files: [{ uri: res.uri, fileName: res.name ?? 'unknown' }],
         destination: 'documentDirectory',
       });
-      console.log('Local file copy:', localFile);
+      console.log('Local music file copy:', localFile);
 
-      // Use localUri and fallback logic for filename
       const fileName = localFile.fileName ?? res.name ?? 'unknown';
-      const fileUri = Platform.OS === 'android' && !localFile.localUri.startsWith('file://')
-        ? 'file://' + localFile.localUri
-        : localFile.localUri;
+      const uri =
+        Platform.OS === 'android' && !localFile.localUri.startsWith('file://')
+          ? `file://${localFile.localUri}`
+          : localFile.localUri;
 
-      const formData = new FormData();
-      formData.append('musicFile', {
-        uri: fileUri,
+      const fileObj = {
+        uri,
         name: fileName,
         type: res.mimeType || 'audio/mpeg',
-      } as any);
+      };
 
-      // Log FormData contents for React Native debug
-      if (formData && formData._parts) {
-        formData._parts.forEach(([key, value]) => {
-          console.log('FormData key:', key, 'value:', value);
+      const formData = new FormData();
+      formData.append('musicFile', fileObj as any);
+
+      // Log FormData contents
+      if ((formData as any)._parts) {
+        (formData as any)._parts.forEach(([key, val]) => {
+          console.log('FormData key:', key, 'Value:', val);
         });
       } else {
-        console.warn('FormData parts not available');
+        console.warn('Cannot inspect FormData parts');
       }
+      console.log('Uploading music file for programId:', programId);
 
       setUploading(true);
-      const result = await uploadMusicFile(programId, formData);
-      console.log('Upload result:', result);
+      const response = await fetch(
+        `http://10.0.2.2:5243/api/Music/program/${programId}/upload`,
+        {
+          method: 'POST',
+          body: formData,
+          // Do NOT set Content-Type header—fetch sets it automatically
+        }
+      );
+
+      const respJson = await response.json();
+      console.log('Upload response:', respJson);
+      if (!response.ok) {
+        throw new Error(respJson.message || 'Upload failed');
+      }
 
       Alert.alert('Success', 'Music file uploaded successfully');
-      loadFiles();
-
-    } catch (err: any) {
-      console.error('Upload error:', err);
-      if (err?.message === 'User cancelled document picker') {
-        console.log('User cancelled document picker');
+      await loadFiles();
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      if (error.message === 'User cancelled') {
+        console.log('User cancelled picker');
       } else {
-        Alert.alert('Upload Failed', err?.message || 'Unknown error');
+        Alert.alert('Upload failed', error.message || 'Unknown error');
       }
     } finally {
       setUploading(false);
     }
   };
 
-  // Render each music file item
-  const renderFile = ({ item }: { item: FileModel }) => (
-    <View style={styles.fileItem}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.fileName}>{item.fileName}</Text>
-        <Text style={styles.fileDetails}>
-          {item.contentType} • {(item.fileSize / 1024).toFixed(1)} KB • Uploaded{' '}
-          {new Date(item.uploadedAt).toLocaleDateString()}
-        </Text>
-      </View>
-      {item.fileUrl && (
-        <TouchableOpacity onPress={() => playAudio(item.fileUrl)}>
-          <Text style={styles.playButton}>▶ Play</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-
   return (
     <View style={styles.container}>
       <Text style={styles.header}>Upload Music</Text>
 
       <TouchableOpacity
-        style={styles.uploadButton}
+        style={[styles.uploadButton, uploading && { opacity: 0.6 }]}
         onPress={handleUpload}
         disabled={uploading}
       >
         <Text style={styles.uploadButtonText}>
-          {uploading ? 'Uploading...' : 'Select and Upload File'}
+          {uploading ? 'Uploading...' : 'Select and Upload Music'}
         </Text>
       </TouchableOpacity>
 
-      <Text style={styles.subHeader}>Uploaded Music Files</Text>
+      <Text style={styles.subHeader}>Music Files</Text>
 
       <FlatList
         data={musicFiles}
+        renderItem={({ item }) => (
+          <View style={styles.fileItem}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fileName}>{item.fileName}</Text>
+              <Text style={styles.fileDetails}>
+                {item.contentType} • {(item.fileSize / 1024).toFixed(1)} KB • Uploaded {new Date(item.uploadedAt).toLocaleDateString()}
+              </Text>
+            </View>
+            {item.fileUrl && (
+              <TouchableOpacity onPress={() => Linking.openURL(item.fileUrl)}>
+                <Text style={styles.playButton}>Play</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
         keyExtractor={(item) => item.id}
-        renderItem={renderFile}
-        ListEmptyComponent={
-          <Text style={styles.emptyMessage}>No music files uploaded yet.</Text>
-        }
+        ListEmptyComponent={<Text style={styles.emptyMessage}>No music files uploaded yet.</Text>}
         style={{ flex: 1 }}
       />
 
-      <TouchableOpacity
-        style={styles.cancelButton}
-        onPress={() => navigation.goBack()}
-      >
+      <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
         <Text style={styles.cancelButtonText}>Cancel</Text>
       </TouchableOpacity>
     </View>
@@ -195,6 +203,7 @@ const MusicUploadScreen: React.FC = () => {
 };
 
 export default MusicUploadScreen;
+
 
 const styles = StyleSheet.create({
   container: {
@@ -205,8 +214,18 @@ const styles = StyleSheet.create({
   header: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2563eb',
+    color: '#256ebd',
     marginBottom: 16,
+  },
+  uploadButton: {
+    backgroundColor: '#256ebd',
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+  },
+  uploadButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
   subHeader: {
     fontSize: 16,
@@ -214,18 +233,8 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 8,
   },
-  uploadButton: {
-    backgroundColor: '#2563eb',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  uploadButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
   fileItem: {
-    backgroundColor: '#fff',
+    backgroundColor: 'white',
     padding: 14,
     borderRadius: 8,
     marginBottom: 12,
@@ -234,22 +243,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fileName: {
-    fontWeight: 'bold',
     fontSize: 15,
+    fontWeight: 'bold',
   },
   fileDetails: {
-    color: '#555',
     fontSize: 12,
+    color: '#666',
+    marginTop: 4,
   },
   playButton: {
-    color: '#2563eb',
+    color: '#256ebd',
     fontWeight: '600',
   },
   emptyMessage: {
+    marginTop: 30,
     textAlign: 'center',
-    marginTop: 20,
-    color: '#888',
-    fontStyle: 'italic',
+    color: '#999',
   },
   cancelButton: {
     marginTop: 20,
@@ -257,7 +266,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   cancelButtonText: {
-    color: '#999',
+    color: '#666',
     fontWeight: '600',
   },
 });
